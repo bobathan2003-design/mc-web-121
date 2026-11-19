@@ -12,32 +12,20 @@
             align-items: center;
             height: 100vh;
             flex-direction: column;
-            font-family: 'Segoe UI', monospace;
+            font-family: monospace;
             color: #fff;
             overflow: hidden;
         }
-        #header {
-            margin-bottom: 10px;
-            font-size: 14px;
-            color: #aaa;
-        }
-        #game {
-            border: 2px solid #333;
-            cursor: crosshair;
-        }
+        #header { margin-bottom: 10px; font-size: 14px; color: #aaa; }
+        #game { border: 2px solid #333; cursor: crosshair; }
         #log {
-            margin-top: 10px;
-            font-size: 12px;
-            color: #666;
-            max-height: 100px;
-            overflow-y: auto;
-            width: 854px;
-            font-family: monospace;
+            margin-top: 10px; font-size: 12px; color: #666;
+            max-height: 100px; overflow-y: auto; width: 854px;
         }
     </style>
 </head>
 <body>
-    <div id="header">MCWeb 1.21.11 — OpenGL→WebGL2 Translation Layer</div>
+    <div id="header">MCWeb 1.21.11 — OpenGL to WebGL2 Translation Layer</div>
     <canvas id="game" width="854" height="480"></canvas>
     <div id="log"></div>
 
@@ -52,28 +40,162 @@
                 logDiv.scrollTop = logDiv.scrollHeight;
             }
         };
-
-        // Global tick function that Java will set
-        window._mcweb_tick = null;
     </script>
 
     <script src="classes.js"></script>
     <script>
-        // Start Java main
+        // Run Java main to set everything up
         main();
 
-        // Start render loop
-        function renderLoop() {
-            if (window._mcweb_tick) {
+        // Now find the frame() method in TeaVM's compiled output
+        // TeaVM compiles Main.frame() to a mangled name
+        // We search for it
+        var frameFunc = null;
+
+        // Search the classes.js compiled output for our frame method
+        // TeaVM puts static methods on class objects
+        var src = document.querySelector('script[src="classes.js"]');
+
+        // Method 1: Search all global functions
+        function findFrameMethod() {
+            // TeaVM generates class objects. Our Main class will have
+            // a static method called frame(). Let's find it by trying
+            // common TeaVM naming patterns.
+
+            // Check if TeaVM exposed it directly
+            if (typeof frame === 'function') return frame;
+
+            // Search through all objects on window
+            for (var key in window) {
                 try {
-                    window._mcweb_tick();
-                } catch(e) {
-                    console.error('Frame error:', e);
+                    var obj = window[key];
+                    if (typeof obj === 'object' && obj !== null) {
+                        for (var method in obj) {
+                            if (method.indexOf('frame') !== -1 && 
+                                typeof obj[method] === 'function' &&
+                                obj[method].length === 0) {
+                                // Test it
+                                console.log('[MCWeb] Found candidate: ' + key + '.' + method);
+                                return obj[method].bind(obj);
+                            }
+                        }
+                    }
+                } catch(e) {}
+            }
+            return null;
+        }
+
+        // Method 2: Override the JS to inject our loop
+        // Actually, simplest approach: read classes.js and find the method
+
+        // Method 3: Just use eval to call it by the TeaVM class name
+        // TeaVM compiles com.mcweb.core.Main to something like:
+        // omc_Main or $rt_cls... 
+
+        // Let's try the most reliable approach: grep the JS
+        function findByGrep() {
+            var scripts = document.getElementsByTagName('script');
+            for (var i = 0; i < scripts.length; i++) {
+                if (scripts[i].src && scripts[i].src.indexOf('classes.js') >= 0) {
+                    var xhr = new XMLHttpRequest();
+                    xhr.open('GET', 'classes.js', false); // sync
+                    xhr.send();
+                    var text = xhr.responseText;
+
+                    // Find: function that contains "0.53" (our sky blue clear color)
+                    // and "0.8" (rotation speed) - that's our frame method
+                    var regex = /function\s+(\w+)\s*\(\)\s*\{[^}]*0\.53/g;
+                    var match = regex.exec(text);
+                    if (match) {
+                        console.log('[MCWeb] Found frame function: ' + match[1]);
+                        return window[match[1]] || eval(match[1]);
+                    }
+
+                    // Alternative: find the function with "initialized"
+                    // Look for the static frame method pattern
+                    var lines = text.split('\n');
+                    for (var j = 0; j < lines.length; j++) {
+                        if (lines[j].indexOf('0.53') >= 0 && 
+                            lines[j-1] && lines[j-1].indexOf('function') >= 0) {
+                            var fname = lines[j-1].match(/function\s+(\w+)/);
+                            if (fname) {
+                                console.log('[MCWeb] Found frame by context: ' + fname[1]);
+                                try { return eval(fname[1]); } catch(e) {}
+                            }
+                        }
+                    }
                 }
             }
-            requestAnimationFrame(renderLoop);
+            return null;
         }
-        requestAnimationFrame(renderLoop);
+
+        // Actually let's do the SIMPLEST thing possible.
+        // Just read classes.js, find all zero-arg functions, try each one
+        // The frame function will be the one that doesn't throw and 
+        // causes the canvas to update.
+
+        // SIMPLEST APPROACH: Just add an export from Java side
+        // Since JSBody can set window properties, let's do that.
+
+        // Check if _mcweb_tick was set (even though .tick() failed,
+        // the function itself might work differently)
+
+        // THE ACTUAL SIMPLEST: fetch classes.js, find the frame method name
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', 'classes.js', false);
+        xhr.send();
+        var jsCode = xhr.responseText;
+
+        // TeaVM names our Main class something like "omc_Main" 
+        // and frame() becomes something like "omc_Main_frame"
+        // Search for a function containing our unique string "0.53"
+        // which is the sky blue clear color
+
+        var funcNames = jsCode.match(/function\s+(\$?\w+)\s*\(\)/g);
+        console.log('[MCWeb] Found ' + (funcNames ? funcNames.length : 0) + ' zero-arg functions');
+
+        // Find the one containing clearColor with 0.53
+        var frameRegex = /function\s+(\$?\w+)\s*\(\)\s*\{[\s\S]*?0\.53[\s\S]*?\}/g;
+        var found = null;
+        var m;
+        while ((m = frameRegex.exec(jsCode)) !== null) {
+            console.log('[MCWeb] Candidate frame function: ' + m[1]);
+            found = m[1];
+            break;
+        }
+
+        if (found) {
+            console.log('[MCWeb] Using frame function: ' + found);
+            try {
+                var fn = eval(found);
+                function renderLoop() {
+                    try { fn(); } catch(e) { console.error(e); }
+                    requestAnimationFrame(renderLoop);
+                }
+                requestAnimationFrame(renderLoop);
+                console.log('[MCWeb] Render loop started!');
+            } catch(e) {
+                console.error('[MCWeb] Could not call frame function:', e);
+            }
+        } else {
+            console.error('[MCWeb] Could not find frame function! Dumping candidates...');
+            // Fallback: try common TeaVM patterns
+            var patterns = [
+                'omc_Main_frame', 
+                'cmcw_Main_frame',
+                'jl_Main_frame'
+            ];
+            for (var p = 0; p < patterns.length; p++) {
+                try {
+                    var testFn = eval(patterns[p]);
+                    if (typeof testFn === 'function') {
+                        console.log('[MCWeb] Found via pattern: ' + patterns[p]);
+                        found = patterns[p];
+                        break;
+                    }
+                } catch(e) {}
+            }
+        }
     </script>
 </body>
 </html>
