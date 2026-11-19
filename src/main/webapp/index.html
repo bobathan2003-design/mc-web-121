@@ -1,4 +1,3 @@
-<!-- src/main/webapp/index.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -25,7 +24,6 @@
         #game {
             border: 2px solid #333;
             cursor: crosshair;
-            image-rendering: pixelated;
         }
         #log {
             margin-top: 10px;
@@ -36,41 +34,46 @@
             width: 854px;
             font-family: monospace;
         }
-        #loading {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 20px;
-            color: #fff;
-        }
     </style>
 </head>
 <body>
-    <div id="header">MCWeb 1.21.11 — OpenGL→WebGL2 Translation Layer Test</div>
+    <div id="header">MCWeb 1.21.11 — OpenGL→WebGL2 Translation Layer</div>
     <canvas id="game" width="854" height="480"></canvas>
     <div id="log"></div>
-    <div id="loading">Loading TeaVM...</div>
 
     <script>
-        // Override console.log to show in page
-        const origLog = console.log;
-        const logDiv = document.getElementById('log');
-        console.log = function(...args) {
-            origLog.apply(console, args);
-            const msg = args.join(' ');
-            if (msg.includes('[MCWeb]')) {
+        var origLog = console.log;
+        var logDiv = document.getElementById('log');
+        console.log = function() {
+            origLog.apply(console, arguments);
+            var msg = Array.prototype.join.call(arguments, ' ');
+            if (msg.indexOf('[MCWeb]') >= 0) {
                 logDiv.innerHTML += msg + '<br>';
                 logDiv.scrollTop = logDiv.scrollHeight;
             }
         };
+
+        // Global tick function that Java will set
+        window._mcweb_tick = null;
     </script>
 
-    <!-- TeaVM generated output -->
     <script src="classes.js"></script>
     <script>
-        document.getElementById('loading').style.display = 'none';
+        // Start Java main
         main();
+
+        // Start render loop
+        function renderLoop() {
+            if (window._mcweb_tick) {
+                try {
+                    window._mcweb_tick();
+                } catch(e) {
+                    console.error('Frame error:', e);
+                }
+            }
+            requestAnimationFrame(renderLoop);
+        }
+        requestAnimationFrame(renderLoop);
     </script>
 </body>
 </html>
