@@ -58,13 +58,12 @@ public class Main {
         "}\n";
 
     @JSFunctor
-    public interface FrameCallback extends JSObject {
-        void onFrame();
+    public interface TickFunction extends JSObject {
+        void tick();
     }
 
-    @JSBody(params = {"callback"}, script =
-        "requestAnimationFrame(function() { callback.onFrame(); });")
-    private static native void scheduleFrame(FrameCallback callback);
+    @JSBody(params = {"fn"}, script = "window._mcweb_tick = function() { fn.tick(); };")
+    private static native void registerTick(TickFunction fn);
 
     @JSBody(params = {"msg"}, script = "console.log('[MCWeb] ' + msg);")
     private static native void log(String msg);
@@ -90,17 +89,13 @@ public class Main {
         log("WebGL2 context created");
 
         GL11.glEnable(GL11.GL_DEPTH_TEST);
-        // Don't enable cull face yet - let all faces show
-        // GL11.glEnable(GL11.GL_CULL_FACE);
 
         shaderProgram = createShaderProgram(VERTEX_SHADER, FRAGMENT_SHADER);
-        log("Shader program created: " + shaderProgram);
+        log("Shader program created");
 
         uProjection = GL20.glGetUniformLocation(shaderProgram, "uProjection");
         uView = GL20.glGetUniformLocation(shaderProgram, "uView");
         uModel = GL20.glGetUniformLocation(shaderProgram, "uModel");
-
-        log("uProjection=" + uProjection + " uView=" + uView + " uModel=" + uModel);
 
         float[] blockVertices = buildGrassBlock();
 
@@ -111,43 +106,41 @@ public class Main {
         GL15.glBindBuffer(GL15.GL_ARRAY_BUFFER, vbo);
         GL15.glBufferData(GL15.GL_ARRAY_BUFFER, blockVertices, GL15.GL_STATIC_DRAW);
 
-        int stride = 36; // 9 floats * 4 bytes
+        int stride = 36;
 
         int posLoc = GL20.glGetAttribLocation(shaderProgram, "aPosition");
-        log("aPosition location: " + posLoc);
         GL20.glVertexAttribPointer(posLoc, 3, GL11.GL_FLOAT, false, stride, 0);
         GL20.glEnableVertexAttribArray(posLoc);
 
         int colorLoc = GL20.glGetAttribLocation(shaderProgram, "aColor");
-        log("aColor location: " + colorLoc);
         GL20.glVertexAttribPointer(colorLoc, 3, GL11.GL_FLOAT, false, stride, 12);
         GL20.glEnableVertexAttribArray(colorLoc);
 
         int normalLoc = GL20.glGetAttribLocation(shaderProgram, "aNormal");
-        log("aNormal location: " + normalLoc);
         GL20.glVertexAttribPointer(normalLoc, 3, GL11.GL_FLOAT, false, stride, 24);
         GL20.glEnableVertexAttribArray(normalLoc);
 
         GL30.glBindVertexArray(0);
 
-        log("Block uploaded. Starting render loop...");
+        log("Block uploaded");
         log("Click canvas to capture mouse. Drag to rotate. Scroll to zoom.");
 
         lastTime = getTime();
-        doFrame();
+
+        // Register our tick function - JS will call this every frame
+        registerTick(Main::doFrame);
+
+        log("Render loop registered!");
     }
 
     private static float[] buildGrassBlock() {
         float s = 0.5f;
 
-        // Colors
-        float gr = 0.34f, gg = 0.75f, gb = 0.20f; // grass green
-        float dr = 0.54f, dg = 0.36f, db = 0.17f; // dirt brown
-        float br = 0.45f, bg = 0.30f, bb = 0.14f; // bottom dark
+        float gr = 0.34f, gg = 0.75f, gb = 0.20f;
+        float dr = 0.54f, dg = 0.36f, db = 0.17f;
+        float br = 0.45f, bg = 0.30f, bb = 0.14f;
 
-        // 6 faces * 2 triangles * 3 vertices * 9 floats = 324
         float[] v = {
-            // === TOP FACE (Y+) - GRASS GREEN ===
             -s, s, -s,  gr, gg, gb,  0, 1, 0,
              s, s, -s,  gr, gg, gb,  0, 1, 0,
              s, s,  s,  gr, gg, gb,  0, 1, 0,
@@ -155,7 +148,6 @@ public class Main {
              s, s,  s,  gr, gg, gb,  0, 1, 0,
             -s, s,  s,  gr, gg, gb,  0, 1, 0,
 
-            // === BOTTOM FACE (Y-) - DARK DIRT ===
             -s, -s,  s,  br, bg, bb,  0, -1, 0,
              s, -s,  s,  br, bg, bb,  0, -1, 0,
              s, -s, -s,  br, bg, bb,  0, -1, 0,
@@ -163,7 +155,6 @@ public class Main {
              s, -s, -s,  br, bg, bb,  0, -1, 0,
             -s, -s, -s,  br, bg, bb,  0, -1, 0,
 
-            // === FRONT FACE (Z+) - DIRT ===
             -s, -s, s,  dr, dg, db,  0, 0, 1,
              s, -s, s,  dr, dg, db,  0, 0, 1,
              s,  s, s,  dr, dg, db,  0, 0, 1,
@@ -171,7 +162,6 @@ public class Main {
              s,  s, s,  dr, dg, db,  0, 0, 1,
             -s,  s, s,  dr, dg, db,  0, 0, 1,
 
-            // === BACK FACE (Z-) - DIRT ===
              s, -s, -s,  dr, dg, db,  0, 0, -1,
             -s, -s, -s,  dr, dg, db,  0, 0, -1,
             -s,  s, -s,  dr, dg, db,  0, 0, -1,
@@ -179,7 +169,6 @@ public class Main {
             -s,  s, -s,  dr, dg, db,  0, 0, -1,
              s,  s, -s,  dr, dg, db,  0, 0, -1,
 
-            // === RIGHT FACE (X+) - DIRT ===
             s, -s,  s,  dr, dg, db,  1, 0, 0,
             s, -s, -s,  dr, dg, db,  1, 0, 0,
             s,  s, -s,  dr, dg, db,  1, 0, 0,
@@ -187,7 +176,6 @@ public class Main {
             s,  s, -s,  dr, dg, db,  1, 0, 0,
             s,  s,  s,  dr, dg, db,  1, 0, 0,
 
-            // === LEFT FACE (X-) - DIRT ===
             -s, -s, -s,  dr, dg, db,  -1, 0, 0,
             -s, -s,  s,  dr, dg, db,  -1, 0, 0,
             -s,  s,  s,  dr, dg, db,  -1, 0, 0,
@@ -224,20 +212,21 @@ public class Main {
         float deltaTime = (float)(currentTime - lastTime);
         lastTime = currentTime;
 
-        // Auto-spin the block
+        if (deltaTime > 0.1f) deltaTime = 0.016f;
+        if (deltaTime <= 0) deltaTime = 0.016f;
+
+        // Spin
         rotation += deltaTime * 0.8f;
 
-        // Mouse camera control
+        // Camera mouse - increased sensitivity 5x
         double dx = GLFW.getMouseDX();
         double dy = GLFW.getMouseDY();
 
-        if (dx != 0 || dy != 0) {
-            camRotY += (float)(dx * 0.01);
-            camRotX += (float)(dy * 0.01);
+        camRotY += (float)(dx * 0.05);
+        camRotX += (float)(dy * 0.05);
 
-            if (camRotX > 1.5f) camRotX = 1.5f;
-            if (camRotX < -1.5f) camRotX = -1.5f;
-        }
+        if (camRotX > 1.5f) camRotX = 1.5f;
+        if (camRotX < -1.5f) camRotX = -1.5f;
 
         // Scroll zoom
         double scroll = GLFW.getScrollDY();
@@ -247,13 +236,12 @@ public class Main {
             if (camDist > 10.0f) camDist = 10.0f;
         }
 
-        // Clear with sky blue
+        // Clear sky blue
         GL11.glClearColor(0.53f, 0.81f, 0.98f, 1.0f);
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
 
         GL20.glUseProgram(shaderProgram);
 
-        // Projection
         Matrix4f projection = new Matrix4f();
         projection.perspective(
             (float)(70.0 * Math.PI / 180.0),
@@ -262,26 +250,18 @@ public class Main {
         );
         GL20.glUniformMatrix4fv(uProjection, false, projection.m);
 
-        // View (camera)
         Matrix4f view = new Matrix4f();
         view.translate(0, 0, -camDist);
         view.rotateX(camRotX);
         view.rotateY(camRotY);
         GL20.glUniformMatrix4fv(uView, false, view.m);
 
-        // Model (spinning block)
         Matrix4f model = new Matrix4f();
         model.rotateY(rotation);
         GL20.glUniformMatrix4fv(uModel, false, model.m);
 
-        // Draw
         GL30.glBindVertexArray(vao);
         GL11.glDrawArrays(GL11.GL_TRIANGLES, 0, 36);
         GL30.glBindVertexArray(0);
-
-        GLFW.glfwPollEvents();
-        GLFW.glfwSwapBuffers(window);
-
-        scheduleFrame(Main::doFrame);
     }
 }
