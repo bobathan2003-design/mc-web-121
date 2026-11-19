@@ -1,0 +1,76 @@
+<!-- src/main/webapp/index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>MCWeb 1.21.11</title>
+    <style>
+        * { margin: 0; padding: 0; }
+        body {
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            flex-direction: column;
+            font-family: 'Segoe UI', monospace;
+            color: #fff;
+            overflow: hidden;
+        }
+        #header {
+            margin-bottom: 10px;
+            font-size: 14px;
+            color: #aaa;
+        }
+        #game {
+            border: 2px solid #333;
+            cursor: crosshair;
+            image-rendering: pixelated;
+        }
+        #log {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+            max-height: 100px;
+            overflow-y: auto;
+            width: 854px;
+            font-family: monospace;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 20px;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">MCWeb 1.21.11 — OpenGL→WebGL2 Translation Layer Test</div>
+    <canvas id="game" width="854" height="480"></canvas>
+    <div id="log"></div>
+    <div id="loading">Loading TeaVM...</div>
+
+    <script>
+        // Override console.log to show in page
+        const origLog = console.log;
+        const logDiv = document.getElementById('log');
+        console.log = function(...args) {
+            origLog.apply(console, args);
+            const msg = args.join(' ');
+            if (msg.includes('[MCWeb]')) {
+                logDiv.innerHTML += msg + '<br>';
+                logDiv.scrollTop = logDiv.scrollHeight;
+            }
+        };
+    </script>
+
+    <!-- TeaVM generated output -->
+    <script src="classes.js"></script>
+    <script>
+        document.getElementById('loading').style.display = 'none';
+        main();
+    </script>
+</body>
+</html>
