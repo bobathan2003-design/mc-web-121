@@ -7,6 +7,8 @@ import org.lwjgl.opengl.GL15;
 import org.lwjgl.opengl.GL20;
 import org.lwjgl.opengl.GL30;
 import org.teavm.jso.JSBody;
+import org.teavm.jso.JSFunctor;
+import org.teavm.jso.JSObject;
 import org.teavm.jso.dom.html.HTMLCanvasElement;
 
 public class Main {
@@ -14,8 +16,9 @@ public class Main {
     private static int shaderProgram;
     private static int vao;
     private static int vbo;
+    private static long window;
 
-    private static final String VERTEX_SHADER = 
+    private static final String VERTEX_SHADER =
         "#version 330 core\n" +
         "in vec3 aPosition;\n" +
         "in vec3 aColor;\n" +
@@ -25,7 +28,7 @@ public class Main {
         "    vColor = aColor;\n" +
         "}\n";
 
-    private static final String FRAGMENT_SHADER = 
+    private static final String FRAGMENT_SHADER =
         "#version 330 core\n" +
         "in vec3 vColor;\n" +
         "out vec4 FragColor;\n" +
@@ -33,12 +36,25 @@ public class Main {
         "    FragColor = vec4(vColor, 1.0);\n" +
         "}\n";
 
+    // TeaVM-compatible callback interface
+    @JSFunctor
+    public interface FrameCallback extends JSObject {
+        void onFrame();
+    }
+
+    @JSBody(params = {"callback"}, script =
+        "requestAnimationFrame(function() { callback.onFrame(); });")
+    private static native void scheduleFrame(FrameCallback callback);
+
+    @JSBody(params = {"msg"}, script = "console.log('[MCWeb] ' + msg);")
+    private static native void log(String msg);
+
     public static void main(String[] args) {
         log("MCWeb 1.21.11 - Translation Layer Test");
         log("Initializing...");
 
         GLFW.glfwInit();
-        long window = GLFW.glfwCreateWindow(854, 480, "MCWeb", 0, 0);
+        window = GLFW.glfwCreateWindow(854, 480, "MCWeb", 0, 0);
 
         HTMLCanvasElement canvas = GLFW.getCanvasElement();
         WebGL2 gl = WebGL2.create(canvas);
@@ -80,7 +96,7 @@ public class Main {
         log("Geometry uploaded");
         log("Starting render loop...");
 
-        doFrame(window);
+        doFrame();
     }
 
     private static int createShaderProgram(String vertSrc, String fragSrc) {
@@ -103,7 +119,7 @@ public class Main {
         return program;
     }
 
-    private static void doFrame(long window) {
+    private static void doFrame() {
         GL11.glClearColor(0.06f, 0.06f, 0.12f, 1.0f);
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
 
@@ -120,20 +136,7 @@ public class Main {
 
         GLFW.glfwSwapBuffers(window);
 
-        scheduleFrame(new FrameCallback(window));
+        // Schedule next frame using JSFunctor interface
+        scheduleFrame(Main::doFrame);
     }
-
-    // TeaVM-friendly callback class instead of lambda
-    private static class FrameCallback implements Runnable {
-        private final long window;
-        FrameCallback(long window) { this.window = window; }
-        public void run() { doFrame(window); }
-    }
-
-    @JSBody(params = {"callback"}, script = 
-        "requestAnimationFrame(function() { callback.run(); });")
-    private static native void scheduleFrame(Runnable callback);
-
-    @JSBody(params = {"msg"}, script = "console.log('[MCWeb] ' + msg);")
-    private static native void log(String msg);
 }
